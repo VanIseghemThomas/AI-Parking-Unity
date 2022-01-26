@@ -1,0 +1,74 @@
+behaviors:
+  CarBehaviour:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 10240
+      learning_rate: 0.00035
+      beta: 0.0025
+      epsilon: 0.3
+      lambd: 0.95
+      num_epoch: 5
+      learning_rate_schedule: linear
+
+    network_settings:
+      normalize: true
+      hidden_units: 128
+      num_layers: 3
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.95
+        strength: 0.99
+      gail:
+        strength: 0.3
+        demo_path: Demos/90dgRS3s.demo
+        use_actions: false
+
+    behavioral_cloning: 
+      demo_path: Demos/90dgRS3s.demo
+      steps: 500000
+      strength: 0.4
+
+    keep_checkpoints: 15
+    checkpoint_interval: 1000000
+    time_horizon: 264
+    max_steps: 30000000
+    summary_freq: 20000
+    threaded: true
+
+  CarBehaviourSAC:
+    trainer_type: sac
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 50000
+      learning_rate: 0.00035
+      buffer_init_steps: 5000
+      init_entcoef: 0.5
+      steps_per_update: 1
+      learning_rate_schedule: constant
+
+    network_settings:
+      normalize: true
+      hidden_units: 128
+      num_layers: 3
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.95
+        strength: 0.99
+      gail:
+        strength: 0.3
+        demo_path: Demos/90degRandSpawnTr.demo
+        use_actions: false
+
+    behavioral_cloning: 
+      demo_path: Demos/90degRandSpawnTr.demo
+      steps: 200000
+      strength: 0.3
+
+    keep_checkpoints: 15
+    time_horizon: 264
+    max_steps: 30000000
+    summary_freq: 20000
+    threaded: false
