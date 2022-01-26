@@ -1467,7 +1467,7 @@ GameObject:
   - component: {fileID: 2395270261977727247}
   - component: {fileID: 1259234144}
   m_Layer: 0
-  m_Name: Car
+  m_Name: CarAgent_Parallel
   m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

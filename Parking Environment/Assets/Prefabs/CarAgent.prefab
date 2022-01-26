@@ -872,7 +872,7 @@ GameObject:
   - component: {fileID: 5532211428068986616}
   - component: {fileID: 4391216934180027276}
   m_Layer: 0
-  m_Name: Car90
+  m_Name: CarAgent
   m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

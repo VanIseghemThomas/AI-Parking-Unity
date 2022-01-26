@@ -11,7 +11,8 @@ using Unity.MLAgents.Actuators;
 namespace UnityStandardAssets.Vehicles.Car{
     public class CarAgent : Agent
     {
-        public float spawnRadius = 2f;
+        public float spawnRadiusX = 2f;
+        public float spawnRadiusZ = 2f;
         public float envRadiusX = 3f;
         public float envRadiusZ = 10f;
         public float inTargetMultiplier = 1.5f;
@@ -22,7 +23,7 @@ namespace UnityStandardAssets.Vehicles.Car{
         public bool cameraGrayScale = false;
         public SensorCompressionType sensorCompressionType = SensorCompressionType.PNG;
 
-        public bool enableLogging = true;
+        public bool isResetting = false;
 
         private CarController carController;
         EnvironmentParameters defaultParameters;
@@ -49,6 +50,34 @@ namespace UnityStandardAssets.Vehicles.Car{
 
         }
 
+        private void Reset(){
+            // Spawn randomly in defined range
+            float spawnX = Random.Range(startPosition.x - spawnRadiusX, startPosition.x + spawnRadiusX);
+            float spawnZ = Random.Range(startPosition.z - spawnRadiusZ, startPosition.z + spawnRadiusZ);
+            Vector3 spawnPosition = new Vector3(spawnX, startPosition.y, spawnZ);
+
+            rb.transform.position = spawnPosition;
+            rb.transform.rotation = startRotation;
+            rb.velocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+
+            steps = 0;
+        }
+
+        public override void Initialize(){
+            carController = GetComponent<CarController>();
+            rb = GetComponent<Rigidbody>();
+            defaultParameters = Academy.Instance.EnvironmentParameters;
+            
+            startPosition = transform.position;
+            startRotation = transform.rotation;
+            
+            lastPosition = startPosition;
+
+            Reset();
+            AddCameras();
+        }
+
         private float CalculateReward(){
             
             // Compare the difference of the previous distance to target to the current one
@@ -57,6 +86,7 @@ namespace UnityStandardAssets.Vehicles.Car{
 
             float totDirectionChangeReward = 0f;
             float totAngleChangeReward = 0f;
+            float totDistanceReward = 0f;
 
             if(lastPosition != Vector3.zero){
                 float distanceToTargetX = Mathf.Abs(transform.position.x - target.transform.position.x);
@@ -69,16 +99,25 @@ namespace UnityStandardAssets.Vehicles.Car{
                 float directionChangeZ = lastDistanceToTargetZ - distanceToTargetZ;
 
                 totDirectionChangeReward = (directionChangeX + directionChangeZ) * 10f;
-                totDirectionChangeReward = Mathf.Clamp(totDirectionChangeReward, -1f, 0.75f);
-                reward += totDirectionChangeReward;
-                //Debug.Log("Direction change rewardX: " + directionChangeX + " rewardZ: " + directionChangeZ + " tot: " + totDirectionChangeReward);
+                totDirectionChangeReward = Mathf.Clamp(totDirectionChangeReward, -0.5f, 0.5f);
+
+                float distanceRewardX = (1f - distanceToTargetX/envRadiusX);
+                float distanceRewardZ = (1f - distanceToTargetZ/envRadiusZ);
+
+                totDistanceReward = (distanceRewardX + distanceRewardZ) / 20f;
+
+                reward += totDirectionChangeReward + totDistanceReward;
             }
 
             if(inTarget){
                 float angleToTarget = Vector3.Angle(transform.forward, target.transform.forward);
-                angleToTarget = Mathf.Clamp(angleToTarget, 0f, 45f);
+                // When driving in the spot backwards, the angle to target is 180 degrees
+                if(angleToTarget > 90f){
+                    angleToTarget = 180f - angleToTarget;
+                }
+
+                angleToTarget = Mathf.Clamp(angleToTarget, 0f, 90f);
                 float angleReward = (-(1f/45f) * angleToTarget) + 1f;
-                //Debug.Log("Angle Reward: " + angleReward);
 
                 totAngleChangeReward = angleReward + 1f;
 
@@ -88,25 +127,14 @@ namespace UnityStandardAssets.Vehicles.Car{
                 float distanceToTarget = Vector3.Distance(transform.position, target.transform.position);
 
                 // Check if car was able to park and reward it accordingly
-                //Debug.Log("Distance to target: " + distanceToTarget + "Angle to target: " + angleToTarget + "Speed: " + carController.CurrentSpeed);
-                if(angleToTarget < 5f && distanceToTarget < 1f && carController.CurrentSpeed < 3f){
+                if(angleToTarget < 2.5f && distanceToTarget < 1f && Mathf.Abs(carController.CurrentSpeed) < 2f){
                     Debug.Log("Car parked!");
                     reward += 100f;
                     EndEpisode();
                 }
 
-            }else{
-                Vector3 targetToCarVector = transform.position - target.transform.position;
-                float targetToCarAngle = Vector3.Angle(targetToCarVector, transform.forward);
-                targetToCarAngle = Mathf.Clamp(targetToCarAngle, 0f, 90f);
-                float angleToCarReward = (-(1f/180f) * targetToCarAngle) + 1f;
-                //Debug.Log("Angle to car Reward: " + angleToCarReward);
-                totAngleChangeReward = angleToCarReward;
-
-                reward += totAngleChangeReward;
             }
 
-            //Debug.Log("total direction change reward: " + totDirectionChangeReward + " total angle change reward: " + totAngleChangeReward);
             lastPosition = transform.position;
             return reward;            
         }
@@ -129,37 +157,6 @@ namespace UnityStandardAssets.Vehicles.Car{
                 cameraSensorComponent.ObservationType = ObservationType.Default;
                 cameraSensorComponent.CompressionType = sensorCompressionType;
             }
-        }
-
-        private void Reset(){
-            // Spawn randomly in defined range
-            
-            float spawnX = Random.Range(startPosition.x - spawnRadius, startPosition.x + spawnRadius);
-            float spawnZ = Random.Range(startPosition.z - spawnRadius, startPosition.z + spawnRadius);
-            //Debug.Log("Spawning at: " + spawnX + " " + spawnZ);
-            Vector3 spawnPosition = new Vector3(startPosition.x, startPosition.y, spawnZ);
-
-            rb.transform.position = spawnPosition;
-            rb.transform.rotation = startRotation;
-            rb.velocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-
-            steps = 0;
-        }
-
-        public override void Initialize(){
-            carController = GetComponent<CarController>();
-            rb = GetComponent<Rigidbody>();
-            defaultParameters = Academy.Instance.EnvironmentParameters;
-            
-            startPosition = transform.position;
-            startRotation = transform.rotation;
-            
-            // Used for calculating reward
-            lastPosition = startPosition;
-
-            Reset();
-            //AddCameras();
         }
 
         public override void OnEpisodeBegin(){
@@ -187,10 +184,6 @@ namespace UnityStandardAssets.Vehicles.Car{
 
             float reward = CalculateReward();
             AddReward(reward);
-
-            if(enableLogging){
-                Debug.Log("*OnActionReceived * " + "Accel: " + accel + " Steering: " + steering);
-            } 
         }
 
         public override void Heuristic(in ActionBuffers actionsOut)
@@ -208,14 +201,12 @@ namespace UnityStandardAssets.Vehicles.Car{
             continuousActionsOut[0] = steering;
             continuousActionsOut[1] = accel;
             continuousActionsOut[2] = reverse;
-            //Debug.Log("*Heuristic* " + "Accel: " + accel + " Steering: " + steering + " Brake: " + brake + "Reverse: " + reverse);
         }
 
         void OnTriggerEnter(Collider other)
         {
             if(other.gameObject.tag == "Finish"){
                 inTarget = true;
-                //Debug.Log("In target");
             }
         }
 
@@ -223,7 +214,6 @@ namespace UnityStandardAssets.Vehicles.Car{
         {
             if(other.gameObject.tag == "Finish"){
                 inTarget = false;
-                //Debug.Log("Out target");
             }
         }
 
@@ -246,10 +236,9 @@ namespace UnityStandardAssets.Vehicles.Car{
             else if(collision.gameObject.tag == "Car")
             {
                 
-                float reward = -carController.CurrentSpeed * 10f - 5f;
-                //Debug.Log("Collision with car" + reward);
+                float reward = -Mathf.Abs(carController.CurrentSpeed) * 50f - 5f;
                 AddReward(reward);
-                //EndEpisode();
+                EndEpisode();
             }
         }
     }
