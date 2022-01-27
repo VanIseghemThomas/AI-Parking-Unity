@@ -981,8 +981,8 @@ MonoBehaviour:
   cameraHeight: 200
   cameraGrayScale: 0
   sensorCompressionType: 1
-  enableLogging: 0
   isResetting: 0
+  isLookingForSpot: 1
 --- !u!114 &7925184598841732249
 MonoBehaviour:
   m_ObjectHideFlags: 0

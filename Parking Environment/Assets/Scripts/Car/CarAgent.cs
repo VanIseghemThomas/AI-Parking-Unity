@@ -1,8 +1,7 @@
-
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
-//using Debug = UnityEngine.Debug;
 
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
@@ -23,34 +22,44 @@ namespace UnityStandardAssets.Vehicles.Car{
         public bool cameraGrayScale = false;
         public SensorCompressionType sensorCompressionType = SensorCompressionType.PNG;
 
-        public bool isResetting = false;
-
         private CarController carController;
         EnvironmentParameters defaultParameters;
         private Rigidbody rb;
         private int steps = 0;
 
-        private bool nearParkingSpace = false;
-        private int parkTriggerCounter = 0;
         private bool inTarget = false;
 
         private Vector3 startPosition;
         private Quaternion startRotation;
 
         private Vector3 lastPosition;
+        public bool findParkingSpot = true;
+        private bool isLookingForSpot;
+
+        private RayPerceptionSensorComponent3D RayPerceptionSensorComponent;
 
         void FixedUpdate(){
-            // Get desicion from python by requesting the next action
-            RequestDecision();
-            // If agent get's too par from it's target, stop the episode and reset the agent
-            if(Mathf.Abs(transform.position.x - target.transform.position.x) > envRadiusX || Mathf.Abs(transform.position.z - target.transform.position.z) > envRadiusZ){
-                AddReward(-100f);
-                EndEpisode();
+            // If Looking for spot is enabled, the car will drive and try to find a spot first
+            if(isLookingForSpot){
+                CruiseControl(4f);
+                FindParkingSpot();
             }
-
+            
+            // Get desicion from python by requesting the next action
+            if(!isLookingForSpot){
+                RequestDecision();
+                // If agent get's too par from it's target, stop the episode and reset the agent
+                if(Mathf.Abs(transform.position.x - target.transform.position.x) > envRadiusX || Mathf.Abs(transform.position.z - target.transform.position.z) > envRadiusZ){
+                    AddReward(-100f);
+                    EndEpisode();
+                }
+            }  
         }
 
         private void Reset(){
+            if(findParkingSpot){
+                isLookingForSpot = true;
+            }
             // Spawn randomly in defined range
             float spawnX = Random.Range(startPosition.x - spawnRadiusX, startPosition.x + spawnRadiusX);
             float spawnZ = Random.Range(startPosition.z - spawnRadiusZ, startPosition.z + spawnRadiusZ);
@@ -67,6 +76,11 @@ namespace UnityStandardAssets.Vehicles.Car{
         public override void Initialize(){
             carController = GetComponent<CarController>();
             rb = GetComponent<Rigidbody>();
+
+            isLookingForSpot = findParkingSpot;
+
+            RayPerceptionSensorComponent = GetComponent<RayPerceptionSensorComponent3D>();
+
             defaultParameters = Academy.Instance.EnvironmentParameters;
             
             startPosition = transform.position;
@@ -76,6 +90,148 @@ namespace UnityStandardAssets.Vehicles.Car{
 
             Reset();
             AddCameras();
+        }
+
+        private void FindParkingSpot(){
+            var RpMeasurements = RayPerceptionMeasurements();
+            
+            int LeftLikelihoodScore = 0;
+            int RightLikelihoodScore = 0;
+
+            // First check if the left and right perpendicular sensors are detecting a long range
+            if(RpMeasurements.RDistL[2] > 0.9f){
+                LeftLikelihoodScore += 1;
+            }
+            if(RpMeasurements.RDistR[2] > 0.9f){
+                RightLikelihoodScore += 1;
+            }
+
+            // Sum the distances of the sensors for each side to check which side is just seeing space
+            if(RpMeasurements.RDistL.Sum() < RpMeasurements.RDistR.Sum()){
+                LeftLikelihoodScore += 1;
+            }
+            else{
+                RightLikelihoodScore += 1;
+            }
+
+            // Check if sensor observations are symmetrical. This indicates the agent is in the middle of the parking space
+            float RayDiff1 = Mathf.Abs(RpMeasurements.RDistL[0] - RpMeasurements.RDistL[4]);
+            float RayDiff2 = Mathf.Abs(RpMeasurements.RDistL[1] - RpMeasurements.RDistL[3]);
+            float TotalRayDiff = RayDiff1 + RayDiff2;
+
+            if(TotalRayDiff < 0.1f){
+                LeftLikelihoodScore += 1;
+            }
+
+            RayDiff1 = Mathf.Abs(RpMeasurements.RDistR[0] - RpMeasurements.RDistR[4]);
+            RayDiff2 = Mathf.Abs(RpMeasurements.RDistR[1] - RpMeasurements.RDistR[3]);
+            TotalRayDiff = RayDiff1 + RayDiff2;
+
+            if(TotalRayDiff < 0.1f){
+                RightLikelihoodScore += 1;
+            }
+
+            // If one of the sides met all the requirements, the agent is in the middle of a space
+            if(LeftLikelihoodScore == 3){
+                // Validate the spot is lage enough
+                float PredictedSpace = (RpMeasurements.RDistL[1] * Mathf.Cos(60*Mathf.Deg2Rad)) + (RpMeasurements.RDistL[3] * Mathf.Cos(60*Mathf.Deg2Rad));
+                // Distances are in normalised units, so multiply by the ray length to get the actual distance
+                PredictedSpace *= 7;
+
+                if(PredictedSpace > 3f){
+                    isLookingForSpot = false;
+                    Debug.Log("Found spot left");
+                }
+            }
+            else if(RightLikelihoodScore == 3){
+                // Validate the spot is lage enough
+                float PredictedSpace = (RpMeasurements.RDistR[1] * Mathf.Cos(60*Mathf.Deg2Rad)) + (RpMeasurements.RDistR[3] * Mathf.Cos(60*Mathf.Deg2Rad));
+                // Distances are in normalised units, so multiply by the ray length to get the actual distance
+                PredictedSpace *= 7;
+
+                if(PredictedSpace > 3f){
+                    isLookingForSpot = false;
+                    Debug.Log("Found spot right");
+                }
+            }
+
+            else{
+                isLookingForSpot = true;
+            }
+
+        }
+
+        private (float[] RDistL, float[] RDistR, float RDistF, float RDistB) RayPerceptionMeasurements(bool LogValues = false){
+            RayPerceptionInput RayPerceptionIn = RayPerceptionSensorComponent.GetRayPerceptionInput();
+            RayPerceptionOutput RayPerceptionOut = RayPerceptionSensor.Perceive(RayPerceptionIn);
+            RayPerceptionOutput.RayOutput[] RayOutputs = RayPerceptionOut.RayOutputs;
+
+            // ArRay length -1 because 2 Rays overlap in the end of the array when using 180 degree setting. Using 1 of the 2 is perfectly fine.
+            int RayAmount = RayOutputs.Length - 1;
+            float[] RayDistances = new float[RayAmount - 1];
+
+            // Indexing is quite retarted.
+            // Index ordering: [0] = front, [1] = right, [2] = left, [3] = right, [4] = left,...
+            // Even numbers are left, odd numbers are right
+            float[] RayDistancesLeft = new float[(RayAmount - 2) / 2];
+            float[] RayDistancesRight = new float[(RayAmount - 2) / 2];
+
+            float RayDistanceFront = RayOutputs[0].HitFraction;
+            float RayDistanceBack = RayOutputs[RayAmount - 1].HitFraction;
+
+            for(int i = 1; i < RayAmount-1; i++)
+            {
+                // If Even
+                if(i % 2 == 0){
+                    RayDistancesLeft[(i/2)-1] = RayOutputs[i].HitFraction;
+                }
+                // If Oneven
+                else{
+                    RayDistancesRight[(i-1)/2] = RayOutputs[i].HitFraction;
+                }
+            }
+
+            if(LogValues){
+                Debug.Log("Left rays:\n" + ArrayToString(RayDistancesLeft));
+                Debug.Log("Right rays:\n" + ArrayToString(RayDistancesRight));
+            }
+
+            return (RayDistancesLeft, RayDistancesRight, RayDistanceFront, RayDistanceBack);
+        }
+
+        private void CruiseControl(float Speed){
+            if(carController.CurrentSpeed < Speed){
+                carController.Move(0, 0.5f, 0f, 0f);
+            }
+            else if(carController.CurrentSpeed > Speed){
+                carController.Move(0, -0.5f, 0f, 0f);
+            }
+        }
+
+        // Helper functions for debugging
+        private string ArrayToString(float[] array){
+            string str = "[";
+
+            for(int i = 0; i < array.Length; i++){
+                str += array[i] + "  ";
+            }
+
+            str += "]";
+
+            return str;
+        }
+
+        // Same function but method overloaded for different types
+        private string ArrayToString(int[] array){
+            string str = "[";
+
+            for(int i = 0; i < array.Length; i++){
+                str += array[i] + "  ";
+            }
+
+            str += "]";
+
+            return str;
         }
 
         private float CalculateReward(){
@@ -164,7 +320,8 @@ namespace UnityStandardAssets.Vehicles.Car{
         }
 
         public override void CollectObservations(VectorSensor sensor){
-            sensor.AddObservation(carController.CurrentSpeed);
+            float normalisedSpeed = carController.CurrentSpeed / 30f;
+            sensor.AddObservation(normalisedSpeed);
         }
 
         public override void OnActionReceived(ActionBuffers actions){
@@ -177,9 +334,11 @@ namespace UnityStandardAssets.Vehicles.Car{
             reverse = (reverse + 1) / 2;
 
             accel = accel - reverse;
-
-            carController.Move(steering, accel, 0f, 0f);
-
+            
+            if(!isLookingForSpot){
+                carController.Move(steering, accel, 0f, 0f);
+            }
+            
             steps++;
 
             float reward = CalculateReward();
