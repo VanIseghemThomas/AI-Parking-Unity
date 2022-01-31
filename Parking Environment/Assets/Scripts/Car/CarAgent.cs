@@ -31,12 +31,15 @@ namespace UnityStandardAssets.Vehicles.Car{
 
         private Vector3 startPosition;
         private Quaternion startRotation;
-
         private Vector3 lastPosition;
+
+        // Automated parking detection variables
         public bool findParkingSpot = true;
         private bool isLookingForSpot;
-
+        private bool isPositioning;
         private RayPerceptionSensorComponent3D RayPerceptionSensorComponent;
+        private Vector3 detectedSpotLocation;
+        private float predictedSpotSize = 0f;
 
         void FixedUpdate(){
             // If Looking for spot is enabled, the car will drive and try to find a spot first
@@ -44,7 +47,11 @@ namespace UnityStandardAssets.Vehicles.Car{
                 CruiseControl(4f);
                 FindParkingSpot();
             }
-            
+
+            if(isPositioning && findParkingSpot){
+                PositionCar(2f, 0f);
+            }
+
             // Get desicion from python by requesting the next action
             if(!isLookingForSpot){
                 RequestDecision();
@@ -59,6 +66,7 @@ namespace UnityStandardAssets.Vehicles.Car{
         private void Reset(){
             if(findParkingSpot){
                 isLookingForSpot = true;
+                isPositioning = false;
             }
             // Spawn randomly in defined range
             float spawnX = Random.Range(startPosition.x - spawnRadiusX, startPosition.x + spawnRadiusX);
@@ -130,16 +138,21 @@ namespace UnityStandardAssets.Vehicles.Car{
             if(TotalRayDiff < 0.1f){
                 RightLikelihoodScore += 1;
             }
-
+            
+            // Can be refactored
             // If one of the sides met all the requirements, the agent is in the middle of a space
             if(LeftLikelihoodScore == 3){
                 // Validate the spot is lage enough
                 float PredictedSpace = (RpMeasurements.RDistL[1] * Mathf.Cos(60*Mathf.Deg2Rad)) + (RpMeasurements.RDistL[3] * Mathf.Cos(60*Mathf.Deg2Rad));
                 // Distances are in normalised units, so multiply by the ray length to get the actual distance
                 PredictedSpace *= 7;
+                
 
                 if(PredictedSpace > 3f){
                     isLookingForSpot = false;
+                    isPositioning = true;
+                    predictedSpotSize = PredictedSpace;
+                    detectedSpotLocation = new Vector3(transform.position.x, transform.position.y, transform.position.z);
                     Debug.Log("Found spot left");
                 }
             }
@@ -148,9 +161,12 @@ namespace UnityStandardAssets.Vehicles.Car{
                 float PredictedSpace = (RpMeasurements.RDistR[1] * Mathf.Cos(60*Mathf.Deg2Rad)) + (RpMeasurements.RDistR[3] * Mathf.Cos(60*Mathf.Deg2Rad));
                 // Distances are in normalised units, so multiply by the ray length to get the actual distance
                 PredictedSpace *= 7;
-
+                
                 if(PredictedSpace > 3f){
                     isLookingForSpot = false;
+                    isPositioning = true;
+                    predictedSpotSize = PredictedSpace;
+                    detectedSpotLocation = new Vector3(transform.position.x, transform.position.y, transform.position.z);
                     Debug.Log("Found spot right");
                 }
             }
@@ -205,6 +221,20 @@ namespace UnityStandardAssets.Vehicles.Car{
             }
             else if(carController.CurrentSpeed > Speed){
                 carController.Move(0, -0.5f, 0f, 0f);
+            }
+        }
+
+        private void PositionCar(float offsetX, float offsetZ){
+            float coveredX = transform.position.x - detectedSpotLocation.x;
+            float coveredZ = transform.position.z - detectedSpotLocation.z;
+
+
+            if(coveredX < offsetX){
+                carController.Move(0f, .2f, 0f, 0f);
+            }
+
+            else{
+                isPositioning = false;
             }
         }
 
@@ -320,8 +350,7 @@ namespace UnityStandardAssets.Vehicles.Car{
         }
 
         public override void CollectObservations(VectorSensor sensor){
-            float normalisedSpeed = carController.CurrentSpeed / 30f;
-            sensor.AddObservation(normalisedSpeed);
+            sensor.AddObservation(carController.CurrentSpeed);
         }
 
         public override void OnActionReceived(ActionBuffers actions){
