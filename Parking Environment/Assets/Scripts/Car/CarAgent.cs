@@ -49,7 +49,7 @@ namespace UnityStandardAssets.Vehicles.Car{
             }
 
             if(isPositioning && findParkingSpot){
-                PositionCar(2f, 0f);
+                PositionCar(-1f);
             }
 
             // Get desicion from python by requesting the next action
@@ -224,15 +224,16 @@ namespace UnityStandardAssets.Vehicles.Car{
             }
         }
 
-        private void PositionCar(float offsetX, float offsetZ){
-            float coveredX = transform.position.x - detectedSpotLocation.x;
-            float coveredZ = transform.position.z - detectedSpotLocation.z;
+        private void PositionCar(float offsetX){
+            float coveredX = Mathf.Abs(transform.position.x - detectedSpotLocation.x);
+            float absoluteOffsetX = Mathf.Abs(offsetX);
 
-
-            if(coveredX < offsetX){
-                carController.Move(0f, .2f, 0f, 0f);
+            if(coveredX < absoluteOffsetX && offsetX < 0){
+                carController.Move(0f, -.3f, 0f, 0f);
             }
-
+            else if(coveredX < absoluteOffsetX && offsetX > 0){
+                carController.Move(0f, .1f, 0f, 0f);
+            }
             else{
                 isPositioning = false;
             }
