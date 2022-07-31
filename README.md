@@ -2,12 +2,15 @@
 ## A RL project focussed on autonomous parking, using Unity's ML-Agents toolkit.
 
 This project was created to answer to following question:
+
 **Is it possible to search for a parking spot and park in a simulation environment, using neural networks and park in complex scenario's?**
 
 It's still in it's early stages, but autonomous driving is becoming a reality. It has lot's of advantages compared to humans. But one thing that is often getting overlooked is parking. A lot of people like myself are pretty good at driving in traffic, but fail when it comes to parking the car. It is and will stay a hard task for a lot of people. But what if this could be automated?
 
 ### So why the choice for a simulation environment? 
 Because models from simulation are transferable to real life. Simulating gives us the advantage to speed up time, do things in parallel with lot's of cars, avoid expensive crashes and not having to create dangerous real life situations. Also it's a lot cheaper than buying and modifying a real car.
+
+## A video walkthrough is available **[here](https://youtu.be/_Bzw2B-9QkM)** on my channel.
 
 ### Requirements
 
